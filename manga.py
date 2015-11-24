@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, tzinfo
 from pymongo import MongoClient
 from pymongo.son_manipulator import SONManipulator
 from bson.objectid import ObjectId
+from django.conf import settings
 
 connection = None
 db = None
@@ -26,13 +27,17 @@ _manipulators = []
 milli_trim = lambda x: x.replace(microsecond=int((x.microsecond/1000)*1000))
 
 
+def create_id(id):
+    return ObjectId(id)
+
+
 def setup(database_name):
     global db, connection, _manipulators
 
     if db:
         raise Exception('Module was already configured.')
 
-    connection = MongoClient('143.54.12.130', 27017, tz_aware=True)
+    connection = MongoClient(settings.MONGO['server'], settings.MONGO['port'], tz_aware=True)
     db = getattr(connection, database_name)
 
     for x in _manipulators:
@@ -397,13 +402,18 @@ class Model(Document):
             raise Exception
 
     def save(self):
+        exclude = []
         for fieldname, fieldinstance in list(self._fields.items()):
             value = fieldinstance.pre_save_val()
 
             if value:
                 setattr(self, fieldname, value)
 
-        self.validate()
+            if not self._data[fieldname]:
+                exclude.append(fieldname)
+                del self._data[fieldname]
+
+        self.validate(exclude)
 
         if self._id:
             spec = {'_id': self._id}
